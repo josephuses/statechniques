@@ -1,0 +1,131 @@
+---
+title: Convert list of outputs from ARIMA to `data.frame` using `broom::glance` and `do.call`
+author: "Joseph S. Tabadero, Jr."
+date: "May 1, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preliminaries
+
+The following are the packages that we will need for this tutorial.
+
+```{r}
+library(forecast)
+library(tidyverse)
+library(broom)
+```
+
+
+One of the exercises we had for time series in graduate school is to identify the ARIMA model using Box and Jenkins approach of a synthetically generated data. The data is available [here](https://goo.gl/F0z5iz). [This](https://www.otexts.org/fpp/8) site shows how the model identification can be done with the help of R.
+
+
+We load the data in R and convert it into a `ts` object.
+
+```{r}
+ts3 <- read_table("SET 3", col_names = FALSE)
+ts3_ts <- ts(ts3)
+tsdisplay(ts3_ts)
+tsdisplay(diff(ts3_ts))
+```
+
+
+
+I have already gone through initial phases of model identification and have specified the candidate ARIMA orders pdq in the list `ts3_list`.
+
+```{r}
+ts3_list <- list(
+  TS3_101=c(1,0,1), 
+  TS3_200=c(2,0,0), 
+  TS3_100=c(1,0,0), 
+  TS3_110=c(1,1,0), 
+  TS3_011=c(0,1,1), 
+  TS3_111=c(1,1,1))
+```
+
+Can you guess the convention I followed for naming the ARIMA models?
+
+The Akaike Information Criterion (or AIC) is one of the indicators that are suggested to be used for selecting the order of the ARIMA model. Basically, the model with the lowest AIC, given the same differencing and seasonal adjustments, is to be preferred.
+
+To compute the AIC as well as estimate the parameters of each of the ARIMA of order pdq in our list, we can use `forecast::Arima` on each of the orders in the list. For example, to specify the ARIMA(1,0,1), we may write
+
+```{r}
+Arima(ts3_ts, order = c(1,0,1), include.mean = 0)
+```
+
+The output shows the ARIMA model, the estimated coefficients with standard errors, sigma^2, log likelihood, AIC, AICc, and BIC. We can do this for each order in the list, but such a task will be repetitive. An obvious solution is the use of `lapply` but this will result in a very long output that is not very kind to the eyes.
+
+## lapply with tidy
+
+Thankfully, we can use `broom::glance` to transform the output into tidy data. Combining this with `do.call`, we can coerce the list into a `data.frame` and identify the model with the lowest AIC.
+
+```{r}
+ts3_models <- lapply(ts3_list, function(x) Arima(ts3_ts, order = x, include.mean = 0) %>% glance) %>% do.call(rbind,.)
+ts3_models
+```
+
+Note that instead of using `dplyr::bind_rows`, I used the `do.call` and `rbind` combination in order to preserve the row names. In fact, we can use `rownames_to_column` function in order to specify that the row names are the names of the corresponding ARIMA model.
+
+```{r}
+ts3_models <- ts3_models %>% rownames_to_column("Model")
+```
+
+To identify the model with the lowest AIC, we simply use `arrange` or `filter`. Here, I will demonstrate `arrange`.
+
+```{r}
+ts3_models %>% arrange(AIC)
+```
+
+Here, we see that ARIMA(2,0,0) (or AR(2)) gives the lowest AIC. 
+
+However, some of the models have been differenced once (d = 1). AIC cannot be used to compare models from undifferenced and differenced time series. We can use [RMSE](https://www.otexts.org/fpp/8/9) instead. We will borrow the `getrmse` function from [Hyndman and Athanasopoulos](https://www.otexts.org/fpp/8/9) and tweak it to our use case.
+
+```{r}
+# Function from Hyndman and Athanasopoulos
+getrmse <- function(x,h,...)
+{
+  train.end <- time(x)[length(x)-h]
+  test.start <- time(x)[length(x)-h+1]
+  train <- window(x,end=train.end)
+  test <- window(x,start=test.start)
+  fit <- Arima(train,...)
+  fc <- forecast(fit,h=h)
+  return(accuracy(fc,test)[2,"RMSE"])
+}
+
+# Tweak it to enable use for lapply
+getrmse2 <- function(h = 30, order = order, ...)
+{
+  data.frame(RMSE = getrmse(x = ts3_ts, h = h, order = order))
+}
+
+
+ts3_rmse <- do.call(rbind,lapply(ts3_list, getrmse2, h = 30)) %>% 
+  rownames_to_column("Model")
+```
+
+We can now merege `ts3_models` and `ts3_rmse`.
+
+```{r}
+ts3_models <- left_join(ts3_models, ts3_rmse) %>% select(Model, AIC, RMSE)
+```
+
+
+
+```{r}
+ts3_models %>% arrange(RMSE) 
+```
+
+Here we see that, generally, those models which have low AIC have also low RMSE (except for AR(1)).
+
+We can plot the time series including the 10 steps ahead forecast for AR(2).
+
+```{r}
+autoplot(forecast(Arima(ts3_ts, order = c(2,0,0), include.mean = 0), h = 10)) + 
+  theme_classic()
+```
+
+

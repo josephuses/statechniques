@@ -1,0 +1,86 @@
+---
+title: "R Notes for Assignment 4"
+author: "Joseph S. Tabadero, Jr."
+date: "March 8, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+## Preliminaries
+
+I tried to replicate the SAS results in R. The packages that I used are:
+
+* `survey`: for TSL estimation
+* `dplyr`: for data manipulation
+* `srvyr`: for using `dplyr`-like syntax that is compatible with the `survey` package.
+* `ggplot2`: for graphics
+* `haven`: for importing SAS data sets
+* `knitr`: for printing nice tables
+
+We can install these packages with the following command in R.
+
+```{r eval=FALSE}
+install.packages(c("survey", "dplyr", "srvyr", "ggplot2", "haven"))
+```
+
+We then load the packages using the following code.
+
+```{r}
+library(survey)
+library(dplyr)
+library(srvyr)
+library(ggplot2)
+library(haven)
+```
+
+
+## Problem 1
+
+The following code imports the data into R.
+
+```{r}
+library(haven)
+# import the data and assign it to the object ncsr
+ncsr <- read_sas("~/Stat_291/ncsr.sas7bdat")
+```
+
+To view the data set `ncsr`, we can type:
+
+```{r eval = FALSE}
+View(ncsr)
+```
+
+Now we create an additional column `NCSRWTSH_POP` as required by problem 1 in the problem set.
+
+```{r}
+ncsr <- ncsr %>% 
+  mutate(NCSRWTSH_POP = 209128094/9282*NCSRWTSH)
+```
+
+
+The following data creates a survey design object in R. 
+
+```{r}
+# name the design object ncsr_dsgn
+ncsr_dsgn <- ncsr %>%
+# specify the cluster (ids), strata, weight, and set 
+# tell R that clusters are nested inside strata
+  as_survey_design(ids = SECLUSTR, 
+                   strata = SESTRAT,
+                   weight = NCSRWTSH_POP,
+                   nest = TRUE)
+```
+
+
+Firstly, I want to print the number of strata, clusters, observations, and sum of weights in R. This is not very straightforward as the `PROC SURVEYMEANS` or `PROC SURVEYFREQ` in SAS. (I might write the package developers to include these features in the future.)
+
+```{r}
+ncsr_dsgn %>%
+  summarise(
+    `Number of strata` = count
+  )
+```
+

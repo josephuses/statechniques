@@ -1,0 +1,243 @@
+---
+title: 'Text Mining the Game of Thrones Part 1: Which words are most often mentioned
+  in the books?'
+author: "Joseph S. Tabadero, Jr."
+date: "March 12, 2017"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = TRUE)
+```
+
+## Please bear a little with the intro
+
+Last month, I finished reading Silge and Robinson's [Text Mining with R](http://tidytextmining.com), which implements the tidyverse approach to text mining. Essentially, what the accompanying R package [`tidytext`](CRAN - Package tidytext) does is that it transforms a [corpus](https://en.wikipedia.org/wiki/Text_corpus) (a collection of texts) such that each row is an instance of a token (which can be a word, an [$n$-gram](https://en.wikipedia.org/wiki/N-gram), a sentence, or a paragraph), each column represents a variable, and each table represents an observational unit, in order to facilitate literary analyses. To make things short, it is a way to layout documents in a table in an organized manner with the help of packages under the [`tidyverse`](https://cran.r-project.org/package=tidyverse) to enable people to see patterns in the texts. Text mining seems like a cool thing to do, especially since it can provide insights to people who are engaged not only in literature but also in business, governance, etc. (There are actually examples in the book how you can use text mining to predict the behavior of the stock market.)
+
+`tidytext` is the first text mining R package that is built on top of the `tidyverse` but it plays well with other text mining packages like [`tm`](https://cran.r-project.org/package=tm), which uses the **document term matrix** approach. 
+
+If you are into reading novels, `tidytext` can be used with the [`gutenbergr`](https://cran.r-project.org/package=gutenbergr) to access documents in the [Gutenberg](https://www.gutenberg.org/) book project site, which can then be stored for analyses in your computer. For people who like me who like reading novels and analysing things, this is hard to let pass.
+
+However, the series of books that interest me most nowadays is the Game of Thrones series by George R.R. Martin. The books are not yet out in the Gutenberg site, but with the Kindle files and some text conversion software, it is easy to convert the `.mobi` files to `.txt` files for use with R. (Look at this [post](http://askubuntu.com/questions/102458/how-can-i-convert-epub-files-to-plain-text) in AskUbuntu site on how this can be done.) For this post, I have already converted the files and stored them in a directory in my computer. (*Note that the file conversions may not be perfect, but I don't have any intention to make them so.*)
+
+In this series, we are going to *mine* the books for information to try to answer some of our questions. For this part, we would like to know the answer to **"Who is the most important character in GOT"**? One possible way to answer this is to list count the instances that a character's name was mentioned in the novels. To do this, we can list the names of all the characters, remove all words in the corpus that do not match any of the entry in the list, then do the counting. However, I am a lazy person and there are a lot of things that I have to do (such as starting to read and solve problems in a boring stat theory book). So I'll just list all of the most frequent words used in the books, instead. If the characters are that important, their names will pop up in the list.
+
+
+## Jump here if you don't like reading boring introductions
+
+```{r}
+# load the required packages
+# use tm to import the text files as corpus
+# use dplyr for data manipulation
+# ggplot2 is for plotting
+library(tidytext)
+library(tm)
+library(dplyr)
+library(ggplot2)
+```
+
+The following commands import the files in the directory `"C:/Users/jtabadero-pc/Documents/martin"` as the corpus object `got`, then displays the contents of the object.
+
+
+```{r}
+got <- Corpus(DirSource("C:/Users/jtabadero-pc/Documents/martin"), readerControl = list(language="en"))
+summary(got)
+```
+
+Note that I have already formatted the titles after conversion so that the books follow the sequence of release. Try running the following commands to see the properties of the object `got`.
+
+```{r eval=FALSE}
+str(got)
+class(got)
+```
+
+Next, we remove the numbers, punctuations, and extra white spaces and convert all characters to lower case.
+
+
+```{r}
+got <- got %>% 
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(tolower) 
+```
+
+We now create a document term matrix object `got_dtm`, which we may also use for future analysis.
+
+```{r}
+got_dtm <-DocumentTermMatrix(got)
+got_dtm
+```
+
+Try to investigate the structure and class of `got_dtm` by running the following code.
+
+```{r eval=FALSE}
+str(got_dtm)
+class(got_dtm)
+```
+
+We can now convert from `DocumentTermMatrix` to `tidy` text with the following command.
+
+
+```{r}
+got_tidy <- tidy(got_dtm)
+```
+
+Note that the file conversion introduces some non-Latin and non-ASCII characters. using the `iconv` function, we can convert these characters to Latin and ASCII characters. Then we recode obvious characters to correct ones. There are a lot of them, by the way, so I picked only a few.
+
+```{r}
+got_tidy <- got_tidy %>%
+  # mutate(term = stringi::stri_trans_general(term, "latin-ascii"))
+  mutate(term = iconv(term, "latin1", "ASCII", sub="")) %>%
+  mutate(term = ifelse(term == "aaegon", "aegon", term)) %>%
+  mutate(term = ifelse(term == "aago", "aggo", term)) %>%
+  mutate(term = ifelse(term == "aarya", "arya", term)) %>%
+  mutate(term = ifelse(term == "aalaric", "alaric", term)) %>%
+  mutate(term = ifelse(term == "aaeron", "daeron", term)) %>%
+  mutate(term = ifelse(term == "aarchmaester", "archmaester", term)) %>%
+  mutate(term = ifelse(term == "aashas", "ashas", term)) %>%
+  mutate(term = ifelse(term == "", NA, term))
+
+head(got_tidy, 10) 
+```
+
+We now look at the top 20 words that George R.R. Martin used in the whole series. The following is the pseudo-code.
+
+```{r eval=FALSE}
+From got_tidy find the weighted count of the terms
+then reorder the terms according to the number of counts 
+then get the top 20 most frequent terms 
+then create a bar chart with blue fill 
+with darkgreen count text 
+on a classically themed Cartesian plane
+without x labels and "Frequency" as y label 
+then flip the axes
+```
+
+
+This is how we do it with `ggplot2`.
+
+```{r game}
+the_plot <- got_tidy %>%  count(term, wt = count) %>%
+  mutate(term = reorder(term, n)) %>%
+  top_n(20) %>% 
+  ggplot(aes(term, n)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.4, show.legend = FALSE) +
+  geom_text(aes(label = n), hjust = -0.1, color = "darkgreen", size = 2.5) +
+  theme_classic() +
+  xlab(NULL) + ylab("Frequency") +
+  coord_flip()
+the_plot
+```
+
+Unfortunately, it seems George R.R. Martin is only as good as you and me  in writing. He uses "the", "and", "his", "was", "her", etc. a lot. So do many writers. That is why in text mining, we may delete these words by comparing them with a set of **stop words** and deleting the words that match (a job for `dplyr::anti_join`). `tidytext` has its own stop words stored in the object `stop_words`.
+
+```{r}
+got_tidy <- got_tidy %>%
+  anti_join(stop_words, by = c(term = "word"))
+```
+
+
+Now we can re-plot the bar chart to see the top 20 most frequent words in the series. (Note that this is not that accurate due to the errors in conversion.)
+
+```{r}
+got_tidy %>%  count(term, wt = count) %>%
+  mutate(term = reorder(term, n)) %>%
+  top_n(20) %>% 
+  ggplot(aes(term, n)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.4, show.legend = FALSE) +
+  geom_text(aes(label = n), hjust = -0.1, color = "darkgreen", size = 2.5) +
+  theme_classic() +
+  xlab(NULL) + ylab("Frequency") +
+  coord_flip()
+```
+
+As you can see, "lord", and "ser" are the first and second most frequentyly occurring words in the GOT book series. Jon is the most-frequently mentioned character in the series. The only other character in the list is Tyrion. One of my Facebook friends also noted that "lord" appeared more than three times as much as "lady". A natural question arises as to how many characters are male and how many are female? We may investigate this later in another part of this series of blog posts.
+
+What about if we look at the top 20 most frequently used words in each book? What will be the outcome?
+
+Below, instead of using `facet_wrap`, I used wrote a function for the plot then used `lapply` to apply it to each document in the `got_tidy` tidy text.
+
+```{r}
+# store each unique entry from got_tidy$document to book
+book <- unique(got_tidy$document)
+
+# write the plotting function
+plot_game <- function(book) {
+out <- got_tidy %>% group_by(document) %>%
+  count(term, wt = count) %>%
+  filter(document == book) %>%
+  mutate(term = reorder(term, n)) %>%
+  top_n(20) 
+na.omit(out) %>%  ggplot(aes(term, n)) +
+  geom_bar(stat = "identity", alpha = 0.4, fill = "blue", show.legend = FALSE) +
+  xlab(NULL) + ylab("Frequency") + 
+  geom_text(aes(label = n), hjust = -0.1, color = "darkgreen", size = 2.5) +
+  theme_classic() +
+  # remove the .txt extension
+  ggtitle(substr(basename(book), 1, nchar(basename(book)) - 4)) +
+  coord_flip()
+}
+# apply the function plot_game to each character in the object book
+lapply(book, plot_game)
+```
+
+In which book did Jon's name disappear from the top 20 most frequently mentioned words? Why do you think this is so?
+
+
+## Exercises
+
+* It turned out that I am not that lazy. The following is the [main cast](https://en.wikipedia.org/wiki/List_of_Game_of_Thrones_characters) of characters  according to Wikipedia. Not really. I added some other interesting characters. Can you explain what is happening in each line?
+
+
+```{r}
+characters <- data.frame(
+  word = c("tyrion", "jaime", "cersei", "dany", "daenerys", "jon",
+           "petyr", "jorah", "sansa", "arya", "theon",
+           "bran", "sandor", "joffrey", "catelyn", "robb", "khal", 
+           "ned", "robert", "viserys", "varys", "samwell",
+           "bronn", "tywin", "shae", "jeor", "gendry", "tommen",
+           "jaqen", "davos", "melisandre", "margaery", "stannis",
+           "ygritte", "talisa", "brienne", "gilly", "roose",
+           "tormund", "ramsay", "daario", "missandei", "ellaria", "sparrow",
+           "pycelle", "loras", "hodor", "clegane")
+  )
+
+got_tidy <- got_tidy %>%
+  inner_join(characters, by = c(term = "word")) %>%
+  # what is happening the following line?
+  mutate(term = ifelse(term == "dany" | term == "daenerys", "dany", term))
+
+```
+
+* Can you reproduce the following plot? 
+
+```{r echo=FALSE}
+the_plot2 <- got_tidy %>%  count(term, wt = count) %>%
+  mutate(term = reorder(term, n)) %>%
+  top_n(20) %>% 
+  ggplot(aes(term, n)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.4, show.legend = FALSE) +
+  geom_text(aes(label = n), hjust = -0.1, color = "darkgreen", size = 2.5) +
+  theme_classic() +
+  xlab(NULL) + ylab("Frequency") +
+  ggtitle("Top 20 most frequently mentioned characters\nin the GOT book series") +
+  coord_flip()
+the_plot2
+```
+
+* Try to reproduce the following plots. How about using `facet_wrap`?
+
+```{r echo=FALSE}
+lapply(book, plot_game)
+```
+
+* In view of the above figures, can you explain for the changes in position of the top 20 most frequently mentioned characters in each book?
+
+## What is next in this blog series?
+
+In the next post, we are going to investigate which of the books are the saddest and happiest. Until then! 

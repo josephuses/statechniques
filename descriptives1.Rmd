@@ -1,0 +1,207 @@
+---
+title: "Descriptive statistics with `dplyr`, `stringr` and `ggplot2`"
+author: "Joseph S. Tabadero, Jr."
+date: "February 19, 2017"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## Some introductions
+
+It's been a while since my first blog post about R. Here in the Philippines, R is not as widely used as SAS in the industries and many pirated versions of SPSS in the academe. People I show R to are very much used to the ease of point-and-click workflow that SPSS has to offer and shudder at the sight of lines of R scripts. If you are one of these people I have described, but have been using a spreadsheet such as Microsoft Excel for a while, then you should know that R will not be that difficult for you to learn. In fact, there are a lot of resources that will show you that you can write R functions just as you would write your Excel functions. You can find some of resources on learning R from an Excel background from [here](https://www.r-bloggers.com/introduction-to-r-for-excel-users/) and [here](https://www.rforexcelusers.com/excel-r-function-formula-list/).
+
+One of my friends asked me to start from the most basic lessons on R. However, I don't want to repeat what can already be found easily with a simple Google search. Nevertheless, I would like to start at something that someone starting with statistics and R can easily find helpful--tables and plots.
+
+For this tutorial, I will be using the following packages:
+
+* `dplyr` for structuring data
+* `stringr` for the text search function `str_detect`
+* `ggplot2` for the plots
+* `knitr` for the `kable` function
+
+If you have not installed any of these packages, install them first by opening your R console and typing and entering the following:
+
+```{r installs, echo=FALSE, eval=FALSE}
+install.packages(c("dplyr", "stringr", "ggplot2", "knitr"))
+```
+
+After installation, you can use these packages by the following script:
+
+
+```{r}
+library(dplyr)
+library(stringr)
+library(ggplot2)
+```
+
+## The data
+
+The data is a list of some science and tech institutions in the Philippines known to our imaginary respondents. The rows may not be unique. Our goals are to present the data using a frequency table and some bar graphs, which are topics that are taught in an intro high school statistics class. You can download the data from this [link](https://dl.dropboxusercontent.com/u/28713619/statechniques/institutions.csv). Download and save this into your working directory. (If you don't know where your working directory is, just type: `getwd()` in your R console).
+
+There are a lot of ways to import data into R. Here, we are going to use the `read.csv` function from the `base` package of R. To see how to use the `read.csv` function, just type `?read.csv` in your R console.
+
+For this tutorial, I am going to import the data and save it to an R object named `dataset`.
+
+```{r thedata}
+dataset = read.csv("institutions.csv")
+```
+
+To view the dataset, type:
+
+```{r eval=FALSE}
+View(dataset)
+```
+
+To see what type of object `dataset` is, type:
+
+```{r}
+str(dataset)
+```
+
+If you just want to see the column headers, just type:
+
+```{r}
+names(dataset)
+```
+
+If you want to see the first 6 rows or entries of the data, type:
+
+```{r}
+head(dataset)
+```
+
+You can view the first 10 rows by typing instead:
+
+```{r}
+head(dataset, 10)
+```
+
+
+
+
+For the next parts, we will be making use of the piping operator (`%>%`) in order to connect data and R functions. There is a basic way of doing this in R, but it doesn't mean that it is easier. There are a lot of materials written about subsetting your data in R using the basic approach so I will no longer do that here. The piping operator is a tidy way to clean, structure, and subset your data in R. 
+
+The `mutate` function is used here in order to create a new column `man` which stands for "Manila", by which we Filipinos loosely name our National capital Region. The `ifelse` function is similar to your Excel `if` function. The "OR" binary operator in R is the same as the "OR" binary operator in Excel (`|`). The same is true about the "AND" binary operator (`&`).
+
+My goal with the following script is to create the `man` column which indicates whether an institution is located in NCR or outside of NCR. I know beforehand where the institutions are located. Now, we can go crazy and do some advanced text mining stuff. But to demonstrate the operators I described above, I will just use a simple hack based on a simple fact: Those institutions starting with "UPD" are institutions in the University of the Philippines Diliman network of institutions that are located in Quezon City in NCR; "UPM" stands for University of the Philippines Manila, also in NCR; the rest are outside of NCR. We can use the base function `grep` for identifying these characters in each entry in the data set (`data frame` in R lingo), but for this tutorial, we will use the `str_detect` function of the `stringr` package. To find out more about the `str_detect` function, type `?str_detect`. Can you tell what the following script is doing?
+
+```{r}
+dataset = dataset %>% 
+  mutate(man = ifelse(str_detect(Institution, c("UPD")) | 
+                        str_detect(Institution, "UPM") | 
+                        str_detect(Institution, "SPARKLAB"), 
+                      "yes", "no"))
+```
+
+Going back to our question above, the above script tells R to create a new column named `man` which indicates if an institution is in NCR (`yes`) or outside NCR (`no`). An institution is NCR if it has the strings "UPD", "UPM" but not "BOLINAO" in it. By the way, what happens if we remove `dataset =` from the script? Will the `man` column be saved in the object `dataset`?
+
+
+To see the changes, we can type:
+
+```{r}
+head(dataset)
+```
+
+We now have two columns: `Institution` and `man`. Practice with the `str` and `names` functions of R. You can also try the `glimpse` function from the `tidyr` package. Compare this with the `str` package.
+
+Suppose want to find out the frequency distribution of institutions based on whether they are located in or outside of NCR. Here, I used the `group_by`, and `summarise` functions of `dplyr`. `n()` simply counts the number of incidents of finding each level of the variable as specified by `group_by`. 
+
+
+```{r}
+dataset %>% group_by(man) %>% summarise( Frequency = n()) 
+```
+
+We can create a frequency and relative frequency distribution by making use of the `mutate` function.
+
+```{r}
+dataset %>% 
+  group_by(man) %>% 
+  summarise(Frequency = n()) %>% 
+  mutate(Rel.Frequency = Frequency/sum(Frequency))
+```
+
+Note the use of the `sum` function. Which function in Excel do you think makes a similar behavior?
+The chart below shows the distribution of SSIP participants according to the location of their first choices. 
+
+If you want to know more about the `dplyr` package, [here](https://rpubs.com/bradleyboehmke/data_wrangling) is an excellent resource.
+
+## Exercise 1
+
+Can you write a `Percent` column instead or write it side by side the existing ones? Something like this? (How did I round the `Percent` column into two decimal places? Any familiar Excel function?)
+
+```{r, echo=FALSE}
+dataset %>% group_by(man) %>% summarise(Frequency = n()) %>% mutate(Rel.Frequency = Frequency/sum(Frequency), Percent=round(100*Frequency/sum(Frequency),2))
+```
+
+## Exercise 2
+
+Write an R script that will produce the following table by counting the occurrence of each institution.
+
+```{r echo=FALSE}
+dataset %>% group_by(Institution) %>% summarise(Frequency = n()) %>% mutate(Rel.Frequency = Frequency/sum(Frequency), Percent=round(100*Frequency/sum(Frequency),2))
+```
+
+
+## Bar Graphs
+
+Bar graphs are used to show, graphically, the distribution of categorical variables. We can as easily produce the plots using the base graphics capabilities of R. But I will use `ggplot2` package of Hadley Wickham, which uses the [**grammar of graphics**](https://www.amazon.com/Grammar-Graphics-Statistics-Computing/dp/0387245448) approach. If you want to know more about `ggplot2`, just head on to the `github` page of the updated book [here](https://github.com/hadley/ggplot2-book). You can also read the old version of the book at http://ggplot2.org/ or buy the book at [Amazon](https://www.amazon.com/ggplot2-Elegant-Graphics-Data-Analysis/dp/0387981403).
+
+
+To produce the bar graph for the distribution of institutions according to whether they are located in NCR or not, we simply type:
+
+```{r}
+ggplot(dataset, aes(man)) + geom_bar()
+```
+
+This is the default bar graph that you will get. For data exploration, this is fine. But if you want to present this and make it comprehensible to readers, you have to add some information in the labels and the title.
+
+
+
+```{r}
+ggplot(dataset, aes(man)) + 
+  geom_bar(aes(y = (..count..)),fill="orange", alpha=0.6) + 
+  geom_text(aes(y = (..count..),label =   ifelse((..count..)==0,"",scales::percent((..count..)/sum(..count..)))), stat="count",colour="darkgreen") + 
+  theme_bw() +
+  xlab("Location of Institution") +
+  ylab("Frequency") + 
+  scale_x_discrete(labels=c("yes"="NCR", "no"="Outside NCR")) + 
+  ggtitle("Distribution of Location of Institutions\nListed by Respondents")
+```
+
+
+
+The following is the bar graph for the distribution of listed institutions located within NCR.
+
+```{r}
+dataset %>% filter(man=="yes") %>% ggplot(., aes(x=Institution)) + 
+  geom_bar(aes(y = (..count..)),fill="orange", alpha=0.6) + 
+  geom_text(aes(y = (..count..) ,label =   ifelse((..count..)==0,"",scales::percent((..count..)/sum(..count..)))), stat="count",colour="darkgreen") + 
+  theme_bw() +
+  xlab("Agency") +
+  ylab("Frequency") + 
+  ggtitle("Distribution of Listed Institutions\nLocated in NCR") +
+  coord_flip()
+```
+
+## Exercise 3
+
+Produce the following bar graph with `ggplot`.
+
+
+```{r echo=FALSE}
+dataset %>% filter(man=="no") %>% ggplot(., aes(x=Institution)) + 
+  geom_bar(aes(y = (..count..)),fill="orange", alpha=0.6) + 
+  geom_text(aes(y = (..count..),label =   ifelse((..count..)==0,"",scales::percent((..count..)/sum(..count..)))), stat="count",colour="darkgreen") + 
+  theme_bw() +
+  xlab("Agency") +
+  ylab("Frequency") + 
+  ggtitle("Distribution of Listed Institutions\nLocated outside NCR") +
+  coord_flip()
+```
+
+And there we have it, folks. Don't forget to subscribe to this blog for more articles about statistics, R, data science, and what-nots.

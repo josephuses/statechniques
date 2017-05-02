@@ -1,0 +1,113 @@
+---
+title: 'Having some troubles with the `%>%` #rstats'
+author: "Joseph S. Tabadero, Jr."
+date: "March 7, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = TRUE)
+```
+
+The pipe operator (`%>%`) of the [`magrittr`](mtcars %>% cor.test(., ~wt + mpg)) has been one of my favorite R tools since I first saw it being used in the `ggplot2` graphics. My main reason for using `%>%` is that it makes my R codes look more readable.
+
+As with other tools, I find time to practice with `%>%` to make myself more familiar with it. In one such session, I was playing with the `%>%` and planned to do a test of correlation at the end of a long chunk of code. I was annoyed when, at first, I couldn't run the `cor` function using `%>%`. Let me demonstrate my point with the use of the `mtcars` package. The following examples will be a simple and seem to be complicated by the use of `%>%` but in my actual use case, `%>%` was able to shorten the length code by at least half as much.
+
+## The data and some explanations
+
+```{r}
+library(dplyr)
+library(ggplot2)
+ggplot(mtcars, aes(wt, mpg)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+```
+
+The graphs shows that as the weight of a car increases, the milleage decreases--a negative linear relationship. To find the Pearson correlation coefficient, which measures the strength of the linear relationship between the two variables `wt` and `mpg`, we can use the `cor` function. (Type `?cor` for more info.) There are several ways to do this.
+
+```{r}
+# Get the correlation of mtcar's wt variable and mtcar's mpg variable
+cor(mtcars$wt, mtcars$mpg)
+```
+
+This is one of the most usual ways in which I see this function being used. What I don't like about this style is the repeated call to `mtcars`. Another way to do this is using the `cor` in conjunction with the `with` function. (Type `?with`.)
+
+```{r}
+# Get the correlation of the wt and mpg variables within the mtcar data set
+with(mtcars, cor(wt, mpg))
+```
+
+So, perhaps using `%>%` we can write
+
+```{r eval = FALSE}
+mtcars %>% cor(wt, mpg)
+```
+
+Surprisingly, that didn't work! Instead, the output throws the message
+
+```
+Error in cor(., wt, y) : invalid 'use' argument
+```
+
+That's like R's saying **"Hey, stupid, you are doing it all wrong!"** But seriously, what is the error message saying? It appears that `%>%` placed the object `mtcars` as a first argument, the `.` in `cor(., wt, y)`, and that `y` is an invalid `use`. 
+
+So what is happening? Typing `?cor` I found out the following: 
+
+```
+cor(x, y = NULL, use = "everything",
+   method = c("pearson", "kendall", "spearman"))
+    
+Arguments
+
+x	    a numeric vector, matrix or data frame.
+y	    NULL (default) or a vector, matrix or data frame with compatible dimensions to x. 
+        The default is equivalent to y = x (but more efficient).
+na.rm   logical. Should missing values be removed?
+use	    an optional character string giving a method for computing covariances in the presence of
+        missing values. This must be (an abbreviation of) one of the strings "everything",
+        "all.obs", "complete.obs", "na.or.complete", or "pairwise.complete.obs".
+method	a character string indicating which correlation coefficient (or covariance) is to be
+        computed. One of "pearson" (default), "kendall", or "spearman": can be abbreviated.
+V	    symmetric numeric matrix, usually positive definite such as a covariance matrix.
+```
+
+So, essentially, `mtcars %>% cor(wt, mpg)` is equivalent to:
+
+```{r eval = FALSE}
+cor(x = mtcars, y = wt, use = mpg)
+```
+
+So what to do in order to get a correlation or correlation matrix? Well, the documentation for `cor` says that `x` can be a matrix or data frame. So, we can instead say
+
+```{r}
+mtcars %>% select(wt, mpg) %>% cor
+```
+
+which produces a correlation matrix.
+
+## Some lessons
+
+So what are the lessons here for me?
+
+* Check the documentation for the function 
+
+```{r eval = FALSE}
+?`%>%`
+?cor
+```
+
+* Remember that arguments in functions are matched first by exact name (perfect matching), followed by prefix matching (incomplete matching), and lastly by position. Remember that if you are lazy to specify the name of the argument, use the correct positioning as specified in the funcion's documentation.
+
+## Exercise
+
+Which of the following will run without errors?
+
+```{r eval = FALSE}
+cor.test(~wt + mpg, mtcars)
+cor.test(x = wt, y = mpg, data = mtcars)
+with(mtcars, cor.test(wt, mpg))
+mtcars %>% cor.test(~wt + mpg)
+mtcars %>% cor.test(., ~wt + mpg)
+mtcars %>% cor.test(~wt + mpg, .)
+mtcars %>% cor.test(~wt + mpg, data = .)
+```
+
+

@@ -1,0 +1,162 @@
+---
+title: "Looking up values in R using `dplyr` and `findInterval`"
+author: "Joseph S. Tabadero, Jr."
+date: "April 15, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+My friend, Wilson Chua, was trying to merge two data sets in R in which a value in the variable `SrcIP` (to be explained in a minute) is to be matched with an indicator variable `ASNUM` which is assigned to a range of values with `begin_ip_num` as the lower limit and `end_ip_num` as the upper limit.
+
+I have a similar problem before in which I attempted to use R to match a numerical rating to intervals of scores for rating my students. That was easily solved by using the base function `cut`. But one of the data sets Wilson was working had 1,770,665 rows and at least 9 columns. When I attempted a `cut` solution to his problem, the object created exceeded my computer's physical memory.
+
+So I did some searching and came upon a function in the `base` package that I have never used before: `findInterval`.
+
+## A demonstration with small data sets.
+
+From the documentation of `findInterval`, `findInterval(x, vec)`:
+
+```
+   Given a vector of non-decreasing breakpoints in vec, find the interval containing each element of x
+```
+
+The output of `findInterval` is a vector of increasing index numbers *i*. An element of `x` having the index number *i* belongs to the interval to which `findInterval` assigned that index number *i*. 
+
+Suppose we have closed intervals $[3,5]$, $[6,10]$, and $[12, 15]$ which are assigned assigned the values `AS1`, `AS2`, and `AS3`. Note that the intervals do not cover all of the numbers 1 to 18. We want to assign one of `AS1`, `AS2`, and `AS3` to each value of `x` whenever that value falls in the corresponding interval. What we can do is find the intervals defined by the break points `u` (the lower limits) and find the intervals defined by the break points `v` (the upper limits). We have to add 1 to `v` though in order to ensure that `v` doesn't belong to the interval with lower limit `v + 1`.
+
+```{r}
+x <- 1:18
+u <- c(3,6,12)
+v <- c(5,10,15)
+data1 <- data.frame(x, loc_lower = findInterval(x, u), loc_upper = findInterval(x, v + 1))
+data1
+```
+
+
+Next, we create the second data set which has a unique identifier `ASNUM` for each pair of index numbers `loc_lower` and `loc_upper`. 
+
+```{r}
+data2 <- data.frame(
+  # find the index numbers for values above the lower limits
+  loc_lower = findInterval(u, u), 
+  # find the index numbers for values above the upper limits
+  loc_upper = findInterval(u, v + 1),
+  ASNUM = c("AS1", "AS2", "AS3")
+)
+data2
+```
+
+To merge the data, we can use `dplyr::left_join`.
+
+```{r}
+library(tidyverse)
+data3 <- left_join(data1, data2, by = c("loc_lower", "loc_upper"))
+data3
+```
+
+We note that since `x = 1` does not belong to the intervals that we have defined earlier, its `ASNUM` is `NA`.
+
+## Is there a better solution?
+
+There must be, for instance using [`data.table`](http://stackoverflow.com/questions/32433541/r-merge-2-data-frame-by-multiple-condition-using-dates-id) but I am not versed in that package. If you know how to do this more elegantly in R, please comment below.
+
+
+## A larger application
+
+Wilson is kind enough to send me the `mlab` and `maxmind` data sets. He wanted to match IP's in `mlab` data set with the ASN in the `maxmind` data set. In order to do this, we will need the `iptools` package in order to transform IP's to numeric values and match those values with the range of numeric values (with lower limits `begin_ip_num` and upper limits `end_ip_num` in the `maxmind` data set, respectively) to find the specfic ASN (`ASNUM`). The data sets have been saved in Dropbox and are available [here](https://www.dropbox.com/s/y0wa11q50tudqq8/mlab.csv) and [here](https://www.dropbox.com/s/1vbhrfon29hk3h1/maxmind.csv). Download these data sets and save them in your working directory. The combined data sets is at least 300 Mb in size, so your download might take a while. Once you have done this, you can start with the following codes. As usual, I put comments in the codes for the benefit of my readers who are just starting in R.
+
+
+```{r}
+library(iptools)
+```
+
+
+```{r}
+#read in the source logs from Mlabs
+mlab <- read_csv("mlab.csv", col_types = cols(MinRTT = col_double(), Duration = col_double(), OctetsAcked = col_double()), na = ".")
+mlab.1 <- mlab %>% select(HostIP, ClientsIP)
+```
+
+Now that we have loaded the csv table next we find the AS number and geolocation.
+
+```{r}
+# since the asnip is not part of the iptools that we have downloaded
+# we now need to convert dotted ip into decimal for lookup with maxmind database
+mlab.2 <- mlab.1 %>% mutate(SrCIP = ip_to_numeric(HostIP), DstIP = ip_to_numeric(ClientsIP))
+mlab.2
+```
+
+
+Read in the maxmind data for ASN lookup.
+
+```{r}
+maxmind <- read_csv("maxmind.csv", 
+                    col_types = cols(
+                      begin_ip_num = col_double(), 
+                      end_ip_num = col_double()),
+                    na = "."
+                    )
+# sort the table by begin_ip_num to make sure that 
+# findInterval does not throw fits
+maxmind <-  arrange(maxmind, begin_ip_num) %>%
+# assign an interval locator number to each begin_ip_num
+# this works since begin_ip_num and end_ip_num
+# are clearly limits of non-overlapping intervals
+  mutate(
+    interval_lower = findInterval(begin_ip_num, begin_ip_num),
+  # add 1 from end_ip_num so that the upper limit is indexed correctly
+    interval_upper = findInterval(begin_ip_num, end_ip_num + 1)
+)
+```
+
+Assign the same intervals to mlab.2 using the same interval location variables name `interval_lower` and `interval_upper`.
+
+```{r}
+mlab.2 <- mlab.2 %>% mutate(
+  interval_lower = findInterval(mlab.2$SrCIP, maxmind$begin_ip_num),
+  # add 1 from end_ip_num so that the upper limit is indexed correctly
+  interval_upper = findInterval(mlab.2$SrCIP, maxmind$end_ip_num + 1)
+)
+```
+
+
+Merge the data sets using `interval_lower` and `interval_upper`.
+
+```{r}
+mlab.3 <- left_join(mlab.2, maxmind, by = c("interval_lower", "interval_upper"))
+```
+
+Print the Organizations in descending order.
+
+```{r}
+mlab.3 %>% count(ASNUM, Org) %>% arrange(desc(n))
+```
+
+
+Make a bar graph of the top 20 organizations.
+
+
+```{r}
+mlab.3 %>% 
+  # group and taly by organization
+  count(Org) %>% 
+  # arrange in descending order
+  mutate(Org = reorder(Org, n)) %>% 
+  # choose the top 20 organizations
+  top_n(20) %>%
+  # plot
+  ggplot(aes(Org, n)) + 
+  # the bar graph
+  geom_bar(stat = "identity") + 
+  # change the x label
+  xlab("Organization") + 
+  # I like the black and white theme
+  theme_bw() +
+  # flip the coordinates
+  coord_flip()
+```
